@@ -1,0 +1,33 @@
+Force -O1 when building libgcc to work around the SH-FDPIC .LPCS0 bug.
+
+At -O2 + FDPIC the SH backend duplicates the PIC call-site label .LPCS0
+(the call_site expander bakes a static-counter label number into RTL, and
+an -O2 block-duplication pass copies the insn), so gas rejects libgcc with
+"symbol '.LPCS0' is already defined" (triggers on hardcfr.c -> __hardcfr_check).
+
+CFLAGS_FOR_TARGET=-O1 does not help: it is placed *before* libgcc's own -O2
+(from CFLAGS/LIBGCC2_CFLAGS and the injected GCC_CFLAGS), so -O2 wins. The
+last -O flag on the command line wins, so append -O1 to the END of both
+INTERNAL_CFLAGS and CRTSTUFF_CFLAGS. Blanket -O1 for libgcc only; the rest
+of the toolchain (and musl at -Os) still builds at full optimisation.
+
+--- gcc-17.0.0/libgcc/Makefile.in.orig
++++ gcc-17.0.0/libgcc/Makefile.in
+@@ -295,7 +295,7 @@
+ # will usually contain -g, so for the moment CFLAGS goes first.  We must
+ # include CFLAGS - that's where multilib options live.
+ INTERNAL_CFLAGS = $(CFLAGS) $(LIBGCC2_CFLAGS) $(HOST_LIBGCC2_CFLAGS) \
+-		  $(INCLUDES) @set_have_cc_tls@ @set_use_emutls@
++		  $(INCLUDES) @set_have_cc_tls@ @set_use_emutls@ -O1
+ 
+ NO_PIE_CFLAGS = @NO_PIE_CFLAGS@
+ 
+@@ -304,7 +304,7 @@
+   $(NO_PIE_CFLAGS) -finhibit-size-directive -fno-inline -fno-exceptions \
+   -fno-zero-initialized-in-bss -fno-toplevel-reorder -fno-tree-vectorize \
+   -fbuilding-libgcc -fno-stack-protector $(FORCE_EXPLICIT_EH_REGISTRY) \
+-  $(INHIBIT_LIBC_CFLAGS) $(USE_TM_CLONE_REGISTRY)
++  $(INHIBIT_LIBC_CFLAGS) $(USE_TM_CLONE_REGISTRY) -O1
+ 
+ # Extra flags to use when compiling crt{begin,end}.o.
+ CRTSTUFF_T_CFLAGS =
