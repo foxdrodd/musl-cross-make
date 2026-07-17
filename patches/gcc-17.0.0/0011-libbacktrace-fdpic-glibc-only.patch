@@ -1,0 +1,27 @@
+Gate libbacktrace's FDPIC path to glibc/uClibc so *-muslfdpic can build C++.
+so --enable-languages=c,c++ is possible.
+
+--- a/libbacktrace/internal.h
++++ b/libbacktrace/internal.h
+@@ -332,7 +332,12 @@
+
+ /* The load address mapping.  */
+
+-#if defined(__FDPIC__) && defined(HAVE_DL_ITERATE_PHDR) && (defined(HAVE_LINK_H) || defined(HAVE_SYS_LINK_H))
++/* elf32_fdpic_loadaddr is glibc/uClibc-only; musl uses the generic path.  */
++#include <features.h>	/* __GLIBC__ / __UCLIBC__ */
++
++#if defined(__FDPIC__) && (defined(__GLIBC__) || defined(__UCLIBC__)) \
++    && defined(HAVE_DL_ITERATE_PHDR) \
++    && (defined(HAVE_LINK_H) || defined(HAVE_SYS_LINK_H))
+
+ #ifdef HAVE_LINK_H
+  #include <link.h>
+--- a/libstdc++-v3/src/libbacktrace/backtrace-rename.h
++++ b/libstdc++-v3/src/libbacktrace/backtrace-rename.h
+@@ -1,3 +1,5 @@
++/* Touched so cowpatch realizes libstdc++-v3; otherwise "../libbacktrace"
++   escapes to the unpatched gcc-<ver>.orig tree.  */
+ /* Ensure we don't pollute application namespace.  */
+ #define backtrace_alloc __glibcxx_backtrace_alloc
+ #define backtrace_close __glibcxx_backtrace_close
