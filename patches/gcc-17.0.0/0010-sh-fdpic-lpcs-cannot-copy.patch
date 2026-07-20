@@ -1,6 +1,6 @@
-From e190b5233aa3876ef88a5039f69e3fa568694eb6 Mon Sep 17 00:00:00 2001
+From 006669e1bb742816f37c9765c2a55d551359b003 Mon Sep 17 00:00:00 2001
 From: Florian Fuchs <fuchsfl@gmail.com>
-Date: Fri, 17 Jul 2026 10:53:57 +0200
+Date: Mon, 20 Jul 2026 18:54:46 +0200
 Subject: [PATCH] sh: don't copy insns that define a PIC call site label
  [PR89012]
 
@@ -8,25 +8,41 @@ gcc/ChangeLog:
 
 	PR target/89012
 	* config/sh/sh.cc (sh_cannot_copy_insn_p): Scan every element of
-	a PARALLEL for the call site label, not just the last one.
+	a PARALLEL for the call site label, not just the last one.  Do not
+	bail out before reload for TARGET_FDPIC, where the label is created
+	during expand.
 
 gcc/testsuite/ChangeLog:
 
 	PR target/89012
 	* gcc.target/sh/sh.exp (check_effective_target_sh_fdpic): New.
 	* gcc.target/sh/pr89012.c: New test.
+	* gcc.target/sh/pr89012-2.c: New test.
 ---
- gcc/config/sh/sh.cc                   |  9 ++++++---
- gcc/testsuite/gcc.target/sh/pr89012.c | 27 +++++++++++++++++++++++++++
- gcc/testsuite/gcc.target/sh/sh.exp    |  9 +++++++++
- 3 files changed, 42 insertions(+), 3 deletions(-)
+ gcc/config/sh/sh.cc                     | 13 ++++++++----
+ gcc/testsuite/gcc.target/sh/pr89012-2.c | 18 +++++++++++++++++
+ gcc/testsuite/gcc.target/sh/pr89012.c   | 27 +++++++++++++++++++++++++
+ gcc/testsuite/gcc.target/sh/sh.exp      |  9 +++++++++
+ 4 files changed, 63 insertions(+), 4 deletions(-)
+ create mode 100644 gcc/testsuite/gcc.target/sh/pr89012-2.c
  create mode 100644 gcc/testsuite/gcc.target/sh/pr89012.c
 
 diff --git a/gcc/config/sh/sh.cc b/gcc/config/sh/sh.cc
-index 05b0060..d7a7a67 100644
+index 05b0060..37f36da 100644
 --- a/gcc/config/sh/sh.cc
 +++ b/gcc/config/sh/sh.cc
-@@ -2895,9 +2895,12 @@ sh_cannot_copy_insn_p (rtx_insn *insn)
+@@ -2880,7 +2880,9 @@ unspec_caller_rtx_p (rtx pat)
+ static bool
+ sh_cannot_copy_insn_p (rtx_insn *insn)
+ {
+-  if (!reload_completed || !flag_pic)
++  if (!flag_pic)
++    return false;
++  if (!reload_completed && !TARGET_FDPIC)
+     return false;
+ 
+   if (!NONJUMP_INSN_P (insn))
+@@ -2895,9 +2897,12 @@ sh_cannot_copy_insn_p (rtx_insn *insn)
  
    if (TARGET_FDPIC && GET_CODE (pat) == PARALLEL)
      {
@@ -42,6 +58,30 @@ index 05b0060..d7a7a67 100644
      }
  
    if (GET_CODE (pat) != SET)
+diff --git a/gcc/testsuite/gcc.target/sh/pr89012-2.c b/gcc/testsuite/gcc.target/sh/pr89012-2.c
+new file mode 100644
+index 0000000..ac1db02
+--- /dev/null
++++ b/gcc/testsuite/gcc.target/sh/pr89012-2.c
+@@ -0,0 +1,18 @@
++/* PR target/89012: the call site label exists from expand onwards under FDPIC,
++   so insns carrying one must not be duplicated before reload either.  Here the
++   loop unroller copies the block holding the modulo, which becomes a __udivsi3
++   sfunc call on -m2, and .LPCS0: used to be emitted once per unrolled copy.  */
++/* { dg-do assemble } */
++/* { dg-require-effective-target sh_fdpic } */
++/* { dg-options "-O2 -fpic -m2 -mfdpic" } */
++
++unsigned a, n;
++int *p, v;
++
++void
++f (void)
++{
++#pragma GCC unroll 8
++  for (; n;)
++    p[a % n] = v;
++}
 diff --git a/gcc/testsuite/gcc.target/sh/pr89012.c b/gcc/testsuite/gcc.target/sh/pr89012.c
 new file mode 100644
 index 0000000..8e0aa83
